@@ -17,13 +17,13 @@ use tokio::try_join;
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
 
-const COOKIE_USER_ID: &'static str = "user_id";
-const RESPONSE_FORBIDDEN: &'static str =
+const COOKIE_USER_ID: &str = "user_id";
+const RESPONSE_FORBIDDEN: &str =
     "Looks like you skipped an egg... Don't rush things, mate. Where is the joy in that?";
-const RESPONSE_NOT_FOUND: &'static str = "You lookin for something mate?";
-const RESPONSE_NOT_INVITED: &'static str = "Sorry bro, you weren't invited...";
-const RESPONSE_UNAUTHORIZED: &'static str = "Who the fuck are you...?";
-const SECRET_INVITE_CODE: &'static str = "INVITE_CODE";
+const RESPONSE_NOT_FOUND: &str = "You lookin for something mate?";
+const RESPONSE_NOT_INVITED: &str = "Sorry bro, you weren't invited...";
+const RESPONSE_UNAUTHORIZED: &str = "Who the fuck are you...?";
+const SECRET_INVITE_CODE: &str = "INVITE_CODE";
 
 #[derive(Template)]
 #[template(path = "error.html", escape = "none")]
@@ -91,6 +91,7 @@ async fn get_index(
                 FROM user_eggs
                 INNER JOIN eggs ON user_eggs.egg_id = eggs.id
                 WHERE user_id = $1
+                ORDER BY idx ASC
             ",
         )
         .bind(user_id)
@@ -165,7 +166,7 @@ async fn get_egg(
     State(state): State<MyState>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
     let user_id: Option<Uuid> = jar
-        .get(&COOKIE_USER_ID)
+        .get(COOKIE_USER_ID)
         .map(|id| id.value().parse().unwrap_or_default());
     let egg = sqlx::query_as::<_, EggRecord>(
         r#"
@@ -345,7 +346,7 @@ async fn validate_invite(
 ) -> impl IntoResponse {
     match (jar.get(COOKIE_USER_ID), uri.path(), invite) {
         (None, "/", Some(invite)) if invite == state.invite_code => {
-            return Redirect::to(&format!("/signup?referer={}&invite={}", uri.path(), invite))
+            Redirect::to(&format!("/signup?referer={}&invite={}", uri.path(), invite))
                 .into_response()
         }
         _ => next.run(request).await,
@@ -401,7 +402,7 @@ async fn main(
 
     let invite_code = secrets
         .get(SECRET_INVITE_CODE)
-        .expect(&format!("{SECRET_INVITE_CODE} secret could not be found"));
+        .unwrap_or_else(|| panic!("{SECRET_INVITE_CODE} secret could not be found"));
     let state = MyState { pool, invite_code };
     let router = Router::new()
         .route("/", get(get_index))
