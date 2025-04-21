@@ -1,0 +1,50 @@
+:root {
+  background-attachment: fixed;
+  background-image: linear-gradient(lightblue, aliceblue);
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+main {
+  margin: 2em;
+  text-align: center;
+}
+
+header {
+  text-align: end;
+}
+
+nav {
+  align-items: center;
+  display: flex;
+  justify-content: right;
+  margin: 1em;
+}
+
+nav a {
+  margin: 0.5em;
+  text-decoration: none;
+}
+
+nav a img {
+  height: 2em;
+  vertical-align: top;
+}
+
+table {
+  margin: auto;
+}
+
+tr, td {
+  border-block: 1px solid black;
+  padding: 0.5em;
+}
+
+img.easter-egg {
+  height: 10em;
+}

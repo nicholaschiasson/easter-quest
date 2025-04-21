@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Nicholas Chiasson's Easter egg scavenger hunt" />
+  <meta name="keywords" content="easter,egg,scavenger,hunt,quest" />
+  <meta name="author"
+    content="Nicholas Omer Chiasson &lt;nicholasomerchiasson@gmail.com&gt; (https://nicholaschiasson.github.io)" />
+  <title>home · easter.quest</title>
+  <link rel="icon" href="/favicon.svg">
+  <link href="/static/style.css" rel="stylesheet" />
+</head>
+
+<body>
+  <header>
+    <nav>
+      <a href="/"><img src="/favicon.svg" /></a>
+    </nav>
+  </header>
+  <main>
+    <h1>Hi {{ user.name }}! And Happy Easter!</h1>
+    <p>Welcome to this magical Easter egg scavenger hunt!</p>
+    <p>To begin your quest, click and collect your first egg, right there below this text!</p>
+    <p><a href="/eggs/{{ first_egg.id }}"><img class="easter-egg" src="/favicon.svg" /></a></p>
+    <p>If you need to revisit any of the eggs you've already collected, don't worry! We'll keep track of them in this nice list for you.</p>
+    <table>
+      {% if eggs.len() == 0 %}
+      <tr>
+        <td><a href="/eggs/{{ first_egg.id }}">{{ first_egg.title }}</a></td>
+      </tr>
+      {% else %}
+        {% for egg in eggs %}
+        <tr>
+          <td><a href="/eggs/{{ egg.id }}">{{ egg.title }}</a></td>
+        </tr>
+        {% endfor %}
+      {% endif %}
+    </table>
+  </main>
+  <footer></footer>
+</body>
+
+</html>

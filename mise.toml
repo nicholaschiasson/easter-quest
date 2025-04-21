@@ -1,0 +1,9 @@
+[tools]
+"aqua:rust-lang/rust-analyzer" = "2025-04-21"
+"cargo:cargo-shuttle" = "0.53.0"
+"go:github.com/xo/usql" = "0.19.21"
+rust = "1.86.0"
+watchexec = "2.3.0"
+
+[tasks.serve]
+run = "shuttle run"
