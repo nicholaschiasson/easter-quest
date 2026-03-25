@@ -1,4 +1,4 @@
-use std::{fs, io};
+use std::{fs, io, time::Duration};
 
 use askama::Template;
 use axum::{
@@ -11,10 +11,13 @@ use axum::{
 };
 use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::{Deserialize, Serialize};
-use shuttle_runtime::SecretStore;
-use sqlx::{FromRow, PgPool};
+use sqlx::{postgres::PgConnectOptions, FromRow, PgPool};
 use tokio::try_join;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    timeout::TimeoutLayer,
+    trace::TraceLayer,
+};
 use uuid::Uuid;
 
 const COOKIE_USER_ID: &str = "user_id";
@@ -23,7 +26,10 @@ const RESPONSE_FORBIDDEN: &str =
 const RESPONSE_NOT_FOUND: &str = "You lookin for something mate?";
 const RESPONSE_NOT_INVITED: &str = "Sorry bro, you weren't invited...";
 const RESPONSE_UNAUTHORIZED: &str = "Who the fuck are you...?";
-const SECRET_INVITE_CODE: &str = "INVITE_CODE";
+
+const ENV_NAME_HOST: &str = "HOST";
+const ENV_NAME_PORT: &str = "PORT";
+const ENV_NAME_INVITE_CODE: &str = "INVITE_CODE";
 
 #[derive(Template)]
 #[template(path = "error.html", escape = "none")]
@@ -168,9 +174,10 @@ async fn get_egg(
     let user_id: Option<Uuid> = jar
         .get(COOKIE_USER_ID)
         .map(|id| id.value().parse().unwrap_or_default());
+
     let egg = sqlx::query_as::<_, EggRecord>(
         r#"
-        SELECT * 
+        SELECT *
         FROM (
             SELECT
                 *,
@@ -186,20 +193,9 @@ async fn get_egg(
     .await
     .map_err(|e| e.to_string())
     .and_then(|egg| EggPage::try_from(egg).map_err(|e| e.to_string()));
+
     match (user_id, egg) {
         (Some(user_id), Ok(mut egg)) => {
-            let has_previous = if let Some(previous_id) = egg.previous {
-                sqlx::query_scalar::<_, i64>(
-                    "SELECT count(*) FROM user_eggs WHERE user_id = $1 AND egg_id = $2",
-                )
-                .bind(user_id)
-                .bind(previous_id)
-                .fetch_one(&state.pool)
-                .await
-                .map(|count| count > 0)
-            } else {
-                Ok(true)
-            };
             if let Some(next_id) = egg.next {
                 if let Ok(false) = sqlx::query_scalar::<_, i64>(
                     "SELECT count(*) FROM user_eggs WHERE user_id = $1 AND egg_id = $2",
@@ -213,7 +209,37 @@ async fn get_egg(
                     egg.next = None;
                 }
             }
-            match (has_previous, egg.render()) {
+
+            let rendered = egg.render();
+
+            if let (Ok(true), Ok(rendered)) = (
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT count(*) FROM user_eggs WHERE user_id = $1 AND egg_id = $2",
+                )
+                .bind(user_id)
+                .bind(egg.id)
+                .fetch_one(&state.pool)
+                .await
+                .map(|count| count > 0),
+                rendered.as_deref(),
+            ) {
+                return Ok((StatusCode::OK, Html(rendered.to_string())));
+            }
+
+            let has_previous = if let Some(previous_id) = egg.previous {
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT count(*) FROM user_eggs WHERE user_id = $1 AND egg_id = $2",
+                )
+                .bind(user_id)
+                .bind(previous_id)
+                .fetch_one(&state.pool)
+                .await
+                .map(|count| count > 0)
+            } else {
+                Ok(true)
+            };
+
+            match (has_previous, rendered.as_deref()) {
                 (Ok(true), Ok(rendered)) => {
                     let _ = sqlx::query_scalar::<_, i64>(
                         "INSERT INTO user_eggs (user_id, egg_id) VALUES ($1, $2) RETURNING 1",
@@ -222,7 +248,7 @@ async fn get_egg(
                     .bind(egg.id)
                     .fetch_optional(&state.pool)
                     .await;
-                    Ok((StatusCode::OK, Html(rendered)))
+                    Ok((StatusCode::OK, Html(rendered.to_string())))
                 }
                 (Ok(false), _) => Err(ErrorResponse::new(
                     StatusCode::FORBIDDEN,
@@ -390,21 +416,25 @@ struct MyState {
     invite_code: String,
 }
 
-#[shuttle_runtime::main]
-async fn main(
-    #[shuttle_shared_db::Postgres] pool: PgPool,
-    #[shuttle_runtime::Secrets] secrets: SecretStore,
-) -> shuttle_axum::ShuttleAxum {
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let pool_connect_options = PgConnectOptions::new();
+
+    let pool: PgPool = sqlx::PgPool::connect_with(pool_connect_options)
+        .await
+        .expect("Failed to connect to database");
+
     sqlx::migrate!()
         .run(&pool)
         .await
         .expect("Failed to run migrations");
 
-    let invite_code = secrets
-        .get(SECRET_INVITE_CODE)
-        .unwrap_or_else(|| panic!("{SECRET_INVITE_CODE} secret could not be found"));
+    let invite_code = std::env::var(ENV_NAME_INVITE_CODE)
+        .unwrap_or_else(|_| panic!("{ENV_NAME_INVITE_CODE} environment variable must be defined"));
     let state = MyState { pool, invite_code };
-    let router = Router::new()
+    let app = Router::new()
         .route("/", get(get_index))
         .route("/eggs/{id}", get(get_egg))
         .route_layer(middleware::from_fn_with_state(
@@ -431,7 +461,21 @@ async fn main(
                 .not_found_service(ServeFile::new("rsrc/private/notfound.html")),
         )
         .fallback(not_found)
+        .layer(TraceLayer::new_for_http())
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ))
         .with_state(state);
 
-    Ok(router.into())
+    let listen_host = std::env::var(ENV_NAME_HOST)
+        .unwrap_or_else(|_| panic!("{ENV_NAME_HOST} environment variable must be defined"));
+    let listen_port = std::env::var(ENV_NAME_PORT)
+        .unwrap_or_else(|_| panic!("{ENV_NAME_PORT} environment variable must be defined"));
+    let listen_addr = format!("{listen_host}:{listen_port}");
+    let listener = tokio::net::TcpListener::bind(listen_addr).await.unwrap();
+
+    log::info!("listening on {}", listener.local_addr().unwrap());
+
+    axum::serve(listener, app).await.unwrap();
 }

@@ -4,14 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-askama = "0.13.1"
-axum = "0.8.1"
-axum-extra = { version = "0.10.1", features = ["cookie"] }
+askama = "0.15.5"
+axum = "0.8.8"
+axum-extra = { version = "0.12.5", features = ["cookie"] }
+log = "0.4.29"
 serde = { version = "1.0.219", features = ["derive"] }
-shuttle-axum = "0.53.0"
-shuttle-runtime = "0.53.0"
-shuttle-shared-db = { version = "0.53.0", features = ["postgres", "sqlx"] }
-sqlx = { version = "0.8.5", features = ["uuid"] }
-tokio = "1.28.2"
-tower-http = { version = "0.6.2", features = ["fs"] }
-uuid = { version = "1.16.0", features = ["serde", "v4"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.6.8", features = ["fs", "timeout", "trace"] }
+tracing-subscriber = "0.3.23"
+uuid = { version = "1.22.0", features = ["serde", "v4"] }
