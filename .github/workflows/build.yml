@@ -111,7 +111,8 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          RAW_BINARY_NAME=git-semver
+          REPOSITORY_PATH=${{ github.repository }}
+          RAW_BINARY_NAME=${REPOSITORY_PATH#*/}
           BINARY_NAME=${RAW_BINARY_NAME}
           if [[ ${{ startsWith(matrix.platform, 'windows') }} == true ]]
           then
